@@ -1,3 +1,4 @@
+# Python 3.11+ required (Gradio 4+ does not support Python 3.9/3.10 alpha)
 gradio>=4.0.0
 pandas>=2.0.0
 openpyxl>=3.1.0
