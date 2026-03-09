@@ -21,8 +21,12 @@ logger = logging.getLogger(__name__)
 # ── Module-level helpers ──────────────────────────────────────────────────────
 
 def _split_names(intervention_name: str) -> list[str]:
-    """Split a semicolon-joined intervention_name into individual drug names."""
-    return [n.strip() for n in intervention_name.split(";") if n.strip()]
+    """Split a pipe-separated intervention_name into individual drug names.
+
+    Drug names are separated by \" | \" (pipe) to distinguish them from
+    within-drug multi-value strings which use \"; \" (semicolon).
+    """
+    return [n.strip() for n in intervention_name.split("|") if n.strip()]
 
 
 def _append_unique(lst: list[str], value: str) -> None:
@@ -181,9 +185,11 @@ class EnrichmentPipeline:
                     agg_moa.append("")
                     agg_class.append("")
 
-            trial.drug_name_normalized = "; ".join(agg_normalized)
-            trial.moa                  = "; ".join(agg_moa)
-            trial.drug_class           = "; ".join(agg_class)
+            # " | " separates per-drug entries so it never collides with
+            # "; " used inside a single drug's mechanism/class strings.
+            trial.drug_name_normalized = " | ".join(agg_normalized)
+            trial.moa                  = " | ".join(agg_moa)
+            trial.drug_class           = " | ".join(agg_class)
             trial.molecular_targets    = agg_targets
             trial.approved_indications = agg_indications
             trial.match_method         = "+".join(agg_sources) if agg_sources else "none"

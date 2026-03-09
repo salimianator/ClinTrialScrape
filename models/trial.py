@@ -164,7 +164,9 @@ class Trial:
             if i.get("interventionType", "").upper()
             in ("DRUG", "BIOLOGICAL", "COMBINATION_PRODUCT")
         ] or interventions   # fall back to all types if none are drug/biological
-        intervention_name = "; ".join(
+        # " | " separates distinct drugs so it never collides with "; " which
+        # is used within a single drug's multi-value fields (e.g. MoA strings).
+        intervention_name = " | ".join(
             i.get("name", "") for i in drug_interventions if i.get("name")
         )
         # Unique intervention types, order-preserved
@@ -173,7 +175,7 @@ class Trial:
             t = i.get("interventionType", "")
             if t and t not in _seen_types:
                 _seen_types.append(t)
-        intervention_type = "; ".join(_seen_types)
+        intervention_type = " | ".join(_seen_types)
 
         # ── Design ────────────────────────────────────────────────────────────
         enroll_info  = design_mod.get("enrollmentInfo") or {}
