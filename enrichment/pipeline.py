@@ -18,6 +18,19 @@ from config import ENRICHMENT_CACHE_ENABLED
 logger = logging.getLogger(__name__)
 
 
+# ── Module-level helpers ──────────────────────────────────────────────────────
+
+def _split_names(intervention_name: str) -> list[str]:
+    """Split a semicolon-joined intervention_name into individual drug names."""
+    return [n.strip() for n in intervention_name.split(";") if n.strip()]
+
+
+def _append_unique(lst: list[str], value: str) -> None:
+    """Append *value* to *lst* only if it is non-empty and not already present."""
+    if value and value not in lst:
+        lst.append(value)
+
+
 class EnrichmentPipeline:
     """Orchestrates ChEMBL → OpenFDA enrichment with an in-memory cache.
 
@@ -103,12 +116,12 @@ class EnrichmentPipeline:
         Returns:
             Tuple of (trials_with_enrichment, unique_drug_list).
         """
-        # Collect unique intervention names (skip blanks)
+        # Collect unique individual drug names (intervention_name may be
+        # semicolon-joined when a trial has multiple drugs)
         unique_names: list[str] = []
         seen_normalized: set[str] = set()
         for trial in trials:
-            name = trial.intervention_name.strip()
-            if name:
+            for name in _split_names(trial.intervention_name):
                 norm = name.lower()
                 if norm not in seen_normalized:
                     unique_names.append(name)
@@ -125,28 +138,42 @@ class EnrichmentPipeline:
             if progress_callback:
                 progress_callback(i, total)
 
-        # Update each Trial's enrichment fields from the matched Drug
+        # Update each Trial's enrichment fields, aggregating across all
+        # drugs listed in intervention_name (which may be semicolon-joined)
         for trial in trials:
-            name = trial.intervention_name.strip()
-            if not name:
-                continue
-            drug = drug_map.get(name.lower())
-            if not drug:
+            names = _split_names(trial.intervention_name)
+            if not names:
                 continue
 
-            trial.drug_name_normalized = drug.normalized_name
-            trial.moa                  = drug.moa
-            trial.drug_class           = drug.drug_class
-            trial.molecular_targets    = list(drug.molecular_targets)
-            trial.approved_indications = list(drug.approved_indications)
+            agg_normalized:  list[str] = []
+            agg_moa:         list[str] = []
+            agg_class:       list[str] = []
+            agg_targets:     list[str] = []
+            agg_indications: list[str] = []
+            agg_sources:     list[str] = []
 
-            # Record which source(s) matched
-            sources = []
-            if drug.chembl_found:
-                sources.append("chembl")
-            if drug.openfda_found:
-                sources.append("openfda")
-            trial.match_method = "+".join(sources) if sources else "none"
+            for name in names:
+                drug = drug_map.get(name.lower())
+                if not drug:
+                    continue
+                _append_unique(agg_normalized,  drug.normalized_name)
+                _append_unique(agg_moa,         drug.moa)
+                _append_unique(agg_class,       drug.drug_class)
+                for t in drug.molecular_targets:
+                    _append_unique(agg_targets, t)
+                for ind in drug.approved_indications:
+                    _append_unique(agg_indications, ind)
+                if drug.chembl_found:
+                    _append_unique(agg_sources, "chembl")
+                if drug.openfda_found:
+                    _append_unique(agg_sources, "openfda")
+
+            trial.drug_name_normalized = "; ".join(agg_normalized)
+            trial.moa                  = "; ".join(agg_moa)
+            trial.drug_class           = "; ".join(agg_class)
+            trial.molecular_targets    = agg_targets
+            trial.approved_indications = agg_indications
+            trial.match_method         = "+".join(agg_sources) if agg_sources else "none"
 
         return trials, list(drug_map.values())
 

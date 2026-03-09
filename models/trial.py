@@ -157,18 +157,23 @@ class Trial:
             m.get("term", "") for m in cond_browse.get("meshes", [])
         ]
 
-        # ── Intervention — pick the first DRUG/BIOLOGICAL entry, else first ───
+        # ── Interventions — collect ALL DRUG/BIOLOGICAL entries ──────────────
         interventions = arms_mod.get("interventions", [])
-        chosen = next(
-            (
-                i for i in interventions
-                if i.get("interventionType", "").upper()
-                in ("DRUG", "BIOLOGICAL", "COMBINATION_PRODUCT")
-            ),
-            interventions[0] if interventions else {},
+        drug_interventions = [
+            i for i in interventions
+            if i.get("interventionType", "").upper()
+            in ("DRUG", "BIOLOGICAL", "COMBINATION_PRODUCT")
+        ] or interventions   # fall back to all types if none are drug/biological
+        intervention_name = "; ".join(
+            i.get("name", "") for i in drug_interventions if i.get("name")
         )
-        intervention_name = chosen.get("name", "")
-        intervention_type = chosen.get("interventionType", "")
+        # Unique intervention types, order-preserved
+        _seen_types: list[str] = []
+        for i in drug_interventions:
+            t = i.get("interventionType", "")
+            if t and t not in _seen_types:
+                _seen_types.append(t)
+        intervention_type = "; ".join(_seen_types)
 
         # ── Design ────────────────────────────────────────────────────────────
         enroll_info  = design_mod.get("enrollmentInfo") or {}
