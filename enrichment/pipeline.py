@@ -139,34 +139,47 @@ class EnrichmentPipeline:
                 progress_callback(i, total)
 
         # Update each Trial's enrichment fields, aggregating across all
-        # drugs listed in intervention_name (which may be semicolon-joined)
+        # drugs listed in intervention_name (which may be semicolon-joined).
+        #
+        # Positional scalar fields (normalized_name, moa, drug_class) always
+        # emit exactly one entry per drug — even an empty string — so their
+        # index always aligns with intervention_name after joining with "; ".
+        #
+        # True list fields (molecular_targets, approved_indications) collect
+        # unique values from all drugs with no positional constraint.
         for trial in trials:
             names = _split_names(trial.intervention_name)
             if not names:
                 continue
 
-            agg_normalized:  list[str] = []
-            agg_moa:         list[str] = []
-            agg_class:       list[str] = []
-            agg_targets:     list[str] = []
-            agg_indications: list[str] = []
-            agg_sources:     list[str] = []
+            agg_normalized:  list[str] = []  # positional — one per drug
+            agg_moa:         list[str] = []  # positional — one per drug
+            agg_class:       list[str] = []  # positional — one per drug
+            agg_targets:     list[str] = []  # aggregated unique list
+            agg_indications: list[str] = []  # aggregated unique list
+            agg_sources:     list[str] = []  # aggregated unique list
 
             for name in names:
                 drug = drug_map.get(name.lower())
-                if not drug:
-                    continue
-                _append_unique(agg_normalized,  drug.normalized_name)
-                _append_unique(agg_moa,         drug.moa)
-                _append_unique(agg_class,       drug.drug_class)
-                for t in drug.molecular_targets:
-                    _append_unique(agg_targets, t)
-                for ind in drug.approved_indications:
-                    _append_unique(agg_indications, ind)
-                if drug.chembl_found:
-                    _append_unique(agg_sources, "chembl")
-                if drug.openfda_found:
-                    _append_unique(agg_sources, "openfda")
+                if drug:
+                    # Positional: always append one value (empty string if missing)
+                    agg_normalized.append(drug.normalized_name or name.lower())
+                    agg_moa.append(drug.moa or "")
+                    agg_class.append(drug.drug_class or "")
+                    # Aggregated lists: deduplicate across all drugs in trial
+                    for t in drug.molecular_targets:
+                        _append_unique(agg_targets, t)
+                    for ind in drug.approved_indications:
+                        _append_unique(agg_indications, ind)
+                    if drug.chembl_found:
+                        _append_unique(agg_sources, "chembl")
+                    if drug.openfda_found:
+                        _append_unique(agg_sources, "openfda")
+                else:
+                    # Drug not enriched — keep position with empty placeholders
+                    agg_normalized.append(name.lower())
+                    agg_moa.append("")
+                    agg_class.append("")
 
             trial.drug_name_normalized = "; ".join(agg_normalized)
             trial.moa                  = "; ".join(agg_moa)
